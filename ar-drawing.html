@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>AR Çizim Yardımcısı</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131a;
+    --border: rgba(255,255,255,0.08);
+    --accent: #c8f04a;
+    --accent2: #4af0c8;
+    --text: #f0f0e8;
+    --muted: rgba(240,240,232,0.45);
+    --danger: #f04a4a;
+  }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    overflow: hidden;
+  }
+
+  /* ── SPLASH ── */
+  #splash {
+    position: fixed; inset: 0; z-index: 100;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: var(--bg);
+    padding: 32px;
+    gap: 0;
+    transition: opacity 0.4s, transform 0.4s;
+  }
+  #splash.hidden { opacity: 0; transform: translateY(-20px); pointer-events: none; }
+
+  .logo-mark {
+    width: 72px; height: 72px;
+    border: 2px solid var(--accent);
+    border-radius: 20px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 24px;
+    position: relative;
+  }
+  .logo-mark::after {
+    content: '';
+    position: absolute;
+    inset: 6px;
+    border: 1.5px dashed rgba(200,240,74,0.3);
+    border-radius: 12px;
+    animation: spin 12s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .logo-mark svg { width: 36px; height: 36px; color: var(--accent); }
+
+  .splash-title {
+    font-size: 28px; font-weight: 800;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+    text-align: center;
+  }
+  .splash-sub {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-align: center;
+    line-height: 1.8;
+    margin-bottom: 40px;
+    max-width: 280px;
+  }
+
+  .step-list {
+    display: flex; flex-direction: column; gap: 14px;
+    width: 100%; max-width: 320px;
+    margin-bottom: 36px;
+  }
+  .step-item {
+    display: flex; align-items: flex-start; gap: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+  .step-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(200,240,74,0.1);
+    border-radius: 6px;
+    padding: 2px 7px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+  .step-text { font-size: 13px; line-height: 1.5; color: var(--text); }
+
+  .btn-primary {
+    width: 100%; max-width: 320px;
+    background: var(--accent);
+    color: #0a0a0f;
+    border: none;
+    border-radius: 14px;
+    padding: 18px;
+    font-family: 'Syne', sans-serif;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .btn-primary:active { transform: scale(0.97); }
+  .btn-primary:hover { box-shadow: 0 0 30px rgba(200,240,74,0.3); }
+
+  /* ── APP ── */
+  #app {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.4s;
+  }
+  #app.visible { opacity: 1; pointer-events: all; }
+
+  /* Camera viewport */
+  #viewport {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+    background: #000;
+  }
+
+  #video {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+  }
+
+  #overlay-img {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: contain;
+    opacity: 0.45;
+    display: none;
+    pointer-events: none;
+    transition: opacity 0.1s;
+    /* Touch to move/resize */
+    touch-action: none;
+  }
+
+  /* Empty state prompt */
+  #empty-hint {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px;
+    pointer-events: none;
+  }
+  #empty-hint .hint-icon {
+    width: 64px; height: 64px;
+    border: 2px dashed rgba(255,255,255,0.2);
+    border-radius: 16px;
+    display: flex; align-items: center; justify-content: center;
+    animation: pulse 2s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:0.4} 50%{opacity:0.9} }
+  #empty-hint p {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: rgba(255,255,255,0.35);
+    text-align: center;
+    line-height: 1.7;
+  }
+
+  /* Grid overlay toggle */
+  #grid-overlay {
+    position: absolute; inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    background-image:
+      linear-gradient(rgba(200,240,74,0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(200,240,74,0.08) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  #grid-overlay.visible { opacity: 1; }
+
+  /* Controls bar */
+  #controls {
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 16px 20px 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* Opacity slider row */
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .ctrl-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    flex-shrink: 0;
+    width: 60px;
+  }
+  .ctrl-val {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--accent);
+    flex-shrink: 0;
+    width: 34px;
+    text-align: right;
+  }
+
+  input[type=range] {
+    -webkit-appearance: none;
+    flex: 1;
+    height: 4px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 4px;
+    outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px; height: 20px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(200,240,74,0.5);
+  }
+
+  /* Action buttons */
+  .btn-row {
+    display: flex;
+    gap: 10px;
+  }
+
+  .btn-action {
+    flex: 1;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 13px 8px;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    transition: background 0.15s, border-color 0.15s;
+    letter-spacing: 0.2px;
+  }
+  .btn-action svg { width: 20px; height: 20px; opacity: 0.8; }
+  .btn-action:active { background: rgba(255,255,255,0.1); }
+  .btn-action.active {
+    background: rgba(200,240,74,0.1);
+    border-color: rgba(200,240,74,0.4);
+    color: var(--accent);
+  }
+  .btn-action.active svg { opacity: 1; }
+
+  /* Pick image button — special */
+  .btn-pick {
+    background: rgba(200,240,74,0.08);
+    border-color: rgba(200,240,74,0.25);
+    color: var(--accent);
+  }
+
+  /* Hidden file input */
+  #file-input { display: none; }
+
+  /* Toast */
+  #toast {
+    position: fixed;
+    bottom: 120px;
+    left: 50%; transform: translateX(-50%);
+    background: rgba(10,10,15,0.92);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--accent2);
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s;
+    z-index: 200;
+  }
+  #toast.show { opacity: 1; }
+
+  /* Flip camera indicator */
+  .cam-tag {
+    position: absolute;
+    top: 14px; left: 14px;
+    background: rgba(10,10,15,0.7);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    backdrop-filter: blur(8px);
+  }
+</style>
+</head>
+<body>
+
+<!-- SPLASH SCREEN -->
+<div id="splash">
+  <div class="logo-mark">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+      <path d="M2 17l10 5 10-5"/>
+      <path d="M2 12l10 5 10-5"/>
+    </svg>
+  </div>
+  <div class="splash-title">AR Çizim<br>Yardımcısı</div>
+  <div class="splash-sub">Kağıdının üstüne referans resmi<br>yarı saydam olarak yansıt, üzerinden çiz.</div>
+  <div class="step-list">
+    <div class="step-item">
+      <span class="step-num">01</span>
+      <span class="step-text">Uygulamayı başlat, kamera arkaya dönsün</span>
+    </div>
+    <div class="step-item">
+      <span class="step-num">02</span>
+      <span class="step-text">Galeriden çizmek istediğin resmi seç</span>
+    </div>
+    <div class="step-item">
+      <span class="step-num">03</span>
+      <span class="step-text">Opaklığı ayarla, kağıdı kameranın önüne tut</span>
+    </div>
+    <div class="step-item">
+      <span class="step-num">04</span>
+      <span class="step-text">Ekrandaki çizgiyi takip ederek çiz!</span>
+    </div>
+  </div>
+  <button class="btn-primary" onclick="startApp()">Başla →</button>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <div id="viewport">
+    <video id="video" autoplay playsinline muted></video>
+    <img id="overlay-img" alt="Referans resim">
+    <div id="grid-overlay"></div>
+    <div id="empty-hint">
+      <div class="hint-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="3"/>
+          <circle cx="8.5" cy="8.5" r="1.5"/>
+          <path d="M21 15l-5-5L5 21"/>
+        </svg>
+      </div>
+      <p>Resim seçmek için aşağıdaki<br>📂 butonuna bas</p>
+    </div>
+    <div class="cam-tag" id="cam-tag">📷 ARKA</div>
+  </div>
+
+  <div id="controls">
+    <!-- Opacity slider -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">Opaklık</span>
+      <input type="range" id="opacity-slider" min="5" max="95" value="45" oninput="updateOpacity(this.value)">
+      <span class="ctrl-val" id="opacity-val">45%</span>
+    </div>
+
+    <!-- Scale slider -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">Boyut</span>
+      <input type="range" id="scale-slider" min="30" max="200" value="100" oninput="updateScale(this.value)">
+      <span class="ctrl-val" id="scale-val">100%</span>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="btn-row">
+      <button class="btn-action btn-pick" onclick="document.getElementById('file-input').click()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        Resim Seç
+      </button>
+
+      <button class="btn-action" id="btn-flip" onclick="flipCamera()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M1 4v6h6"/>
+          <path d="M23 20v-6h-6"/>
+          <path d="M20.49 9A9 9 0 005.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 013.51 15"/>
+        </svg>
+        Kamera Çevir
+      </button>
+
+      <button class="btn-action" id="btn-grid" onclick="toggleGrid()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="12" y1="3" x2="12" y2="21"/>
+          <rect x="3" y="3" width="18" height="18" rx="1"/>
+        </svg>
+        Izgara
+      </button>
+
+      <button class="btn-action" id="btn-freeze" onclick="toggleFreeze()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="10" y1="15" x2="10" y2="9"/>
+          <line x1="14" y1="15" x2="14" y2="9"/>
+        </svg>
+        Dondur
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="file-input" accept="image/*" onchange="loadImage(event)">
+
+<script>
+  let currentStream = null;
+  let facingMode = 'environment';
+  let gridOn = false;
+  let frozen = false;
+  let imgScale = 1.0;
+  let imgOffsetX = 0, imgOffsetY = 0;
+  let isDragging = false;
+  let lastTouchDist = null;
+  let dragStartX, dragStartY, imgStartX, imgStartY;
+
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  async function startApp() {
+    document.getElementById('splash').classList.add('hidden');
+    document.getElementById('app').classList.add('visible');
+    await startCamera();
+  }
+
+  async function startCamera() {
+    if (currentStream) {
+      currentStream.getTracks().forEach(t => t.stop());
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false
+      });
+      currentStream = stream;
+      const video = document.getElementById('video');
+      video.srcObject = stream;
+      document.getElementById('cam-tag').textContent = facingMode === 'environment' ? '📷 ARKA' : '🤳 ÖN';
+    } catch(e) {
+      showToast('Kamera erişimi reddedildi');
+    }
+  }
+
+  async function flipCamera() {
+    facingMode = facingMode === 'environment' ? 'user' : 'environment';
+    await startCamera();
+    showToast(facingMode === 'environment' ? 'Arka kamera' : 'Ön kamera');
+  }
+
+  function toggleGrid() {
+    gridOn = !gridOn;
+    document.getElementById('grid-overlay').classList.toggle('visible', gridOn);
+    document.getElementById('btn-grid').classList.toggle('active', gridOn);
+    showToast(gridOn ? 'Izgara açık' : 'Izgara kapalı');
+  }
+
+  function toggleFreeze() {
+    frozen = !frozen;
+    const video = document.getElementById('video');
+    if (frozen) {
+      video.pause();
+      showToast('Kamera donduruldu');
+    } else {
+      video.play();
+      showToast('Kamera devam ediyor');
+    }
+    document.getElementById('btn-freeze').classList.toggle('active', frozen);
+  }
+
+  function updateOpacity(val) {
+    document.getElementById('opacity-val').textContent = val + '%';
+    const img = document.getElementById('overlay-img');
+    img.style.opacity = val / 100;
+  }
+
+  function updateScale(val) {
+    document.getElementById('scale-val').textContent = val + '%';
+    imgScale = val / 100;
+    applyTransform();
+  }
+
+  function applyTransform() {
+    const img = document.getElementById('overlay-img');
+    img.style.transform = `translate(${imgOffsetX}px, ${imgOffsetY}px) scale(${imgScale})`;
+  }
+
+  function loadImage(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = document.getElementById('overlay-img');
+      img.src = e.target.result;
+      img.style.display = 'block';
+      document.getElementById('empty-hint').style.display = 'none';
+      imgOffsetX = 0; imgOffsetY = 0;
+      applyTransform();
+      showToast('Resim yüklendi ✓');
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  }
+
+  // ── TOUCH: drag to reposition, pinch to scale ──
+  const overlay = document.getElementById('overlay-img');
+
+  overlay.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      isDragging = true;
+      dragStartX = e.touches[0].clientX - imgOffsetX;
+      dragStartY = e.touches[0].clientY - imgOffsetY;
+    } else if (e.touches.length === 2) {
+      isDragging = false;
+      lastTouchDist = getTouchDist(e.touches);
+    }
+  }, { passive: false });
+
+  overlay.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (e.touches.length === 1 && isDragging) {
+      imgOffsetX = e.touches[0].clientX - dragStartX;
+      imgOffsetY = e.touches[0].clientY - dragStartY;
+      applyTransform();
+    } else if (e.touches.length === 2 && lastTouchDist) {
+      const newDist = getTouchDist(e.touches);
+      const ratio = newDist / lastTouchDist;
+      imgScale = Math.max(0.2, Math.min(3.0, imgScale * ratio));
+      lastTouchDist = newDist;
+      // sync slider
+      document.getElementById('scale-slider').value = Math.round(imgScale * 100);
+      document.getElementById('scale-val').textContent = Math.round(imgScale * 100) + '%';
+      applyTransform();
+    }
+  }, { passive: false });
+
+  overlay.addEventListener('touchend', () => {
+    isDragging = false;
+    lastTouchDist = null;
+  });
+
+  function getTouchDist(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+</script>
+</body>
+</html>
