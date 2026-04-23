@@ -302,6 +302,51 @@
   }
   #toast.show { opacity: 1; }
 
+  /* Controls kilit overlay */
+  #controls-lock {
+    position: absolute;
+    inset: 0;
+    background: rgba(10,10,15,0.55);
+    backdrop-filter: blur(2px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0;
+    z-index: 10;
+    pointer-events: all;
+  }
+  #controls-lock.active { display: flex; }
+  #controls-lock span {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  /* Kilit butonu — viewport üzerinde sabit */
+  #btn-lock {
+    position: absolute;
+    top: 14px; right: 14px;
+    z-index: 50;
+    background: rgba(10,10,15,0.75);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    display: flex; align-items: center; gap: 6px;
+    cursor: pointer;
+    backdrop-filter: blur(8px);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  #btn-lock svg { width: 14px; height: 14px; flex-shrink: 0; }
+  #btn-lock.locked {
+    border-color: rgba(240,74,74,0.5);
+    color: #f04a4a;
+  }
+
   /* Flip camera indicator */
   .cam-tag {
     position: absolute;
@@ -368,9 +413,22 @@
       <p>Resim seçmek için aşağıdaki<br>📂 butonuna bas</p>
     </div>
     <div class="cam-tag" id="cam-tag">📷 ARKA</div>
+
+    <!-- Kilit butonu -->
+    <button id="btn-lock" onclick="toggleLock()">
+      <svg id="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2"/>
+        <path d="M7 11V7a5 5 0 0110 0v4"/>
+      </svg>
+      <span id="lock-label">KİLİTLE</span>
+    </button>
   </div>
 
-  <div id="controls">
+  <div id="controls" style="position:relative;">
+    <!-- Kilit overlay -->
+    <div id="controls-lock">
+      <span>🔒 KİLİTLİ — açmak için kilit butonuna bas</span>
+    </div>
     <!-- Opacity slider -->
     <div class="ctrl-row">
       <span class="ctrl-label">Opaklık</span>
@@ -383,6 +441,20 @@
       <span class="ctrl-label">Boyut</span>
       <input type="range" id="scale-slider" min="30" max="200" value="100" oninput="updateScale(this.value)">
       <span class="ctrl-val" id="scale-val">100%</span>
+    </div>
+
+    <!-- X (Yatay) slider -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">← Yatay →</span>
+      <input type="range" id="x-slider" min="-300" max="300" value="0" oninput="updateX(this.value)">
+      <span class="ctrl-val" id="x-val">0</span>
+    </div>
+
+    <!-- Y (Dikey) slider -->
+    <div class="ctrl-row">
+      <span class="ctrl-label">↑ Dikey ↓</span>
+      <input type="range" id="y-slider" min="-300" max="300" value="0" oninput="updateY(this.value)">
+      <span class="ctrl-val" id="y-val">0</span>
     </div>
 
     <!-- Action buttons -->
@@ -434,11 +506,32 @@
   let facingMode = 'environment';
   let gridOn = false;
   let frozen = false;
+  let locked = false;
   let imgScale = 1.0;
   let imgOffsetX = 0, imgOffsetY = 0;
   let isDragging = false;
   let lastTouchDist = null;
   let dragStartX, dragStartY, imgStartX, imgStartY;
+
+  function toggleLock() {
+    locked = !locked;
+    const btn = document.getElementById('btn-lock');
+    const overlay = document.getElementById('controls-lock');
+    const label = document.getElementById('lock-label');
+    const icon = document.getElementById('lock-icon');
+
+    btn.classList.toggle('locked', locked);
+    overlay.classList.toggle('active', locked);
+    label.textContent = locked ? 'AÇ' : 'KİLİTLE';
+
+    if (locked) {
+      icon.innerHTML = '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/>';
+      showToast('🔒 Kontroller kilitlendi');
+    } else {
+      icon.innerHTML = '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 019.9-1"/>';
+      showToast('🔓 Kontroller açıldı');
+    }
+  }
 
   function showToast(msg) {
     const t = document.getElementById('toast');
@@ -509,6 +602,27 @@
     applyTransform();
   }
 
+  function updateX(val) {
+    imgOffsetX = Number(val);
+    document.getElementById('x-val').textContent = val;
+    applyTransform();
+  }
+
+  function updateY(val) {
+    imgOffsetY = Number(val);
+    document.getElementById('y-val').textContent = val;
+    applyTransform();
+  }
+
+  function syncSliders() {
+    const clampedX = Math.max(-300, Math.min(300, Math.round(imgOffsetX)));
+    const clampedY = Math.max(-300, Math.min(300, Math.round(imgOffsetY)));
+    document.getElementById('x-slider').value = clampedX;
+    document.getElementById('x-val').textContent = clampedX;
+    document.getElementById('y-slider').value = clampedY;
+    document.getElementById('y-val').textContent = clampedY;
+  }
+
   function applyTransform() {
     const img = document.getElementById('overlay-img');
     img.style.transform = `translate(${imgOffsetX}px, ${imgOffsetY}px) scale(${imgScale})`;
@@ -524,6 +638,10 @@
       img.style.display = 'block';
       document.getElementById('empty-hint').style.display = 'none';
       imgOffsetX = 0; imgOffsetY = 0;
+      document.getElementById('x-slider').value = 0;
+      document.getElementById('x-val').textContent = 0;
+      document.getElementById('y-slider').value = 0;
+      document.getElementById('y-val').textContent = 0;
       applyTransform();
       showToast('Resim yüklendi ✓');
     };
@@ -535,6 +653,7 @@
   const overlay = document.getElementById('overlay-img');
 
   overlay.addEventListener('touchstart', (e) => {
+    if (locked) return;
     e.preventDefault();
     if (e.touches.length === 1) {
       isDragging = true;
@@ -547,11 +666,13 @@
   }, { passive: false });
 
   overlay.addEventListener('touchmove', (e) => {
+    if (locked) return;
     e.preventDefault();
     if (e.touches.length === 1 && isDragging) {
       imgOffsetX = e.touches[0].clientX - dragStartX;
       imgOffsetY = e.touches[0].clientY - dragStartY;
       applyTransform();
+      syncSliders();
     } else if (e.touches.length === 2 && lastTouchDist) {
       const newDist = getTouchDist(e.touches);
       const ratio = newDist / lastTouchDist;
